@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: S3+CloudFront,ECS Fargate, ECR, SSM Parameter Store y AWS Budget (low-cost sobre VPC existente).
+Description: S3+CloudFront,ECS EC2, ECR, SSM Parameter Store y AWS Budget (low-cost sobre VPC existente).
 
 Parameters:
   Environment:
@@ -9,7 +9,7 @@ Parameters:
   
   AppName:
     Type: String
-    Default: infiniteherbs
+    Default: gsmapplication
     Description: Nombre de la plataforma
 
   BudgetLimitUSD:
@@ -29,6 +29,16 @@ Parameters:
     Type: Number
     Default: '0'
     Description: Numero de tareas deseadas
+
+  TaskMemory:
+    Type: Number
+    Default: '512'
+    Description: Memoria asignada a cada tarea
+
+  TaskMemoryReservation:
+    Type: Number
+    Default: '384'
+    Description: Memoria reservada a cada tarea
   
   DBPortParameterName:
     Type: Number
@@ -390,8 +400,8 @@ Resources:
               Protocol: tcp
           Essential: true
           Cpu: 256
-          Memory: 512
-          MemoryReservation: 384
+          Memory: !Ref TaskMemory
+          MemoryReservation: !Ref TaskMemoryReservation
           LogConfiguration:
             LogDriver: awslogs
             Options:
@@ -459,8 +469,8 @@ Resources:
               Protocol: tcp
           Essential: true
           Cpu: 256
-          Memory: 512
-          MemoryReservation: 384
+          Memory: !Ref TaskMemory
+          MemoryReservation: !Ref TaskMemoryReservation
           LogConfiguration:
             LogDriver: awslogs
             Options:
@@ -531,8 +541,8 @@ Resources:
               Protocol: tcp
           Essential: true
           Cpu: 256
-          Memory: 512
-          MemoryReservation: 384
+          Memory: !Ref TaskMemory
+          MemoryReservation: !Ref TaskMemoryReservation
           LogConfiguration:
             LogDriver: awslogs
             Options:

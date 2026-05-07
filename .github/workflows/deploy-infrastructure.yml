@@ -74,6 +74,8 @@ jobs:
             AlertEmail="${{ vars.ALERT_EMAIL }}",
             CloudFrontHeader="${{ vars.CLOUDFRONT_HEADER }}",
             TaskNumberDesired="${{ vars.TASK_NUMBER_DESIRED }}",
+            TaskMemory="${{ vars.TASK_MEMORY }}",
+            TaskMemoryReservation="${{ vars.TASK_MEMORY_RESERVATION }}",
             DBPortParameterName="${{ vars.PORT_DB }}",
             DBMasterUrlParameterName="${{ vars.DB_MASTER_URL_PARAM }}",
             SqlServerProviderIp="${{ vars.DB_MASTER_IP }}",
