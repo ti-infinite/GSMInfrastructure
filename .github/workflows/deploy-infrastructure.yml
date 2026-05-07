@@ -28,7 +28,7 @@ jobs:
             ENV="${{ github.event.inputs.environment }}"
           else
             BRANCH="${{ github.ref_name }}"
-            if [ "$BRANCH" = "master" ]; then
+            if [ "$BRANCH" = "main" ]; then
               ENV="prod"
             elif [ "$BRANCH" = "quality" ]; then
               ENV="qa"
