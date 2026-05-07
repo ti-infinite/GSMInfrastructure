@@ -1,0 +1,729 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: S3+CloudFront,ECS Fargate, ECR, SSM Parameter Store y AWS Budget (low-cost sobre VPC existente).
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, prod]
+  
+  AppName:
+    Type: String
+    Default: infiniteherbs
+    Description: Nombre de la plataforma
+
+  BudgetLimitUSD:
+    Type: Number
+    Default: '30'
+    Description: Límite mensual en USD para el budget
+
+  AlertEmail:
+    Type: String
+    Description: Email para recibir alertas de presupuesto
+    
+  CloudFrontHeader:
+    Type: String
+    Description: Cloudfront Header
+    
+  TaskNumberDesired:
+    Type: Number
+    Default: '0'
+    Description: Numero de tareas deseadas
+  
+  DBPortParameterName:
+    Type: Number
+    Default: 1433
+    Description: Puerto la base de datos
+
+  DBMasterUrlParameterName:
+    Type: String
+    Default: dev/backend/DB_MASTER_URL
+    Description: Nombre del parametro de la url de la master DB
+    
+  SqlServerProviderIp:
+    Type: String
+    Description: 'CIDR Block de del proveedor de la base de datos (ej: a.b.c.d/32)'
+    Default: 0.0.0.0/0
+    
+  JWTSecretParameterName:
+    Type: String
+    Default: dev/backend/JWT_SECRET
+    Description: Nombre del parametro de la llave de JWT
+    
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: ID de la VPC existente (por ejemplo, la default)
+    
+  VpcIdCidrBlock:
+    Type: String
+    Description: 'CIDR Block de la VPC (ej: 10.0.0.0/16)'
+    Default: 10.0.0.0/16
+
+  PrivateSubnet1Id:
+    Type: AWS::EC2::Subnet::Id
+    Description: ID de subnet privada existente (AZ1)
+  
+  Ec2PenKeyName:
+    Type: String
+    Default: dev-key-ec2
+    Description: Key pair Ec2 machine
+
+  Ec2InstanceType:
+    Type: String
+    Default: t4g.medium
+    Description: Tipo se instancia para ec2
+
+  ExistingEIPPublicIp:
+    Type: String
+    Default: ""
+    Description: "DNS de la IP del EIP existente"
+
+Conditions:
+  NoExistEIP: !Equals [!Ref ExistingEIPPublicIp, ""]
+
+Resources:
+  # ------------------------
+  # S3 static website + CloudFront
+  # ------------------------
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    Properties:
+      BucketName: !Sub '${Environment}-${AppName}-frontend'
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: frontend
+
+  CloudFrontOAC:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Description: Access S3 bucket from CloudFront only
+        Name: !Sub '${Environment}-${AppName}-oac'
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub '${FrontendBucket.Arn}/*'
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub 'arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}'
+          - Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action:
+              - "s3:ListBucket"
+              - "s3:GetBucketLocation"
+            Resource: !Sub '${FrontendBucket.Arn}'
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub 'arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}'
+          - Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !Sub '${FrontendBucket.Arn}'
+              - !Sub '${FrontendBucket.Arn}/*'
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub '${Environment} static frontend'
+        DefaultRootObject: index.html
+        Origins:
+          - DomainName: !GetAtt FrontendBucket.RegionalDomainName
+            Id: s3-origin
+            OriginPath: /admin
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+            OriginAccessControlId: !Ref CloudFrontOAC
+          - DomainName: 
+              Fn::If:
+                - NoExistEIP
+                - !GetAtt ECSInstance.PublicDnsName
+                - !Ref ExistingEIPPublicIp
+            Id: BackendEC2Origin
+            CustomOriginConfig:
+              HTTPPort: 80
+              HTTPSPort: 443
+              OriginProtocolPolicy: http-only
+              OriginSSLProtocols: [TLSv1.2]
+            OriginCustomHeaders:
+              - HeaderName: "X-CloudFront-Origin"
+                HeaderValue: !Ref CloudFrontHeader
+        DefaultCacheBehavior:
+          TargetOriginId: s3-origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD, OPTIONS]
+          CachedMethods: [GET, HEAD]
+          Compress: true
+          ForwardedValues:
+            QueryString: false
+        PriceClass: PriceClass_100
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+        CacheBehaviors:
+          - PathPattern: "/api/*"
+            TargetOriginId: BackendEC2Origin
+            ViewerProtocolPolicy: https-only
+            AllowedMethods: [DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT]
+            CachedMethods: [GET, HEAD]
+            ForwardedValues:
+              QueryString: true
+              Headers:
+                - Authorization
+                - Content-Type
+                - Accept
+                - Origin
+                - Referer
+              Cookies:
+                Forward: all
+            MinTTL: 0
+            DefaultTTL: 0
+            MaxTTL: 0
+            Compress: false
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: frontend
+
+
+  # ------------------------
+  # Security Groups para ECS
+  # ------------------------
+  EcsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub '${Environment} ECS SG - HTTP interno VPC Link'
+      GroupName: !Sub '${Environment}-${AppName}-ecs-security-group'
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          Description: CloudFront Prefix List
+          SourcePrefixListId: 'pl-3b927c52'
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          Description: TCP 80 desde VPC Link
+          CidrIp: !Ref VpcIdCidrBlock
+        - IpProtocol: tcp
+          FromPort: 8081
+          ToPort: 8082
+          Description: Comunicacion interna entre contenedores via docker bridge
+          CidrIp: "172.17.0.0/16"          
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          Description: HTTPS SSM/ECR
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: udp
+          FromPort: 53
+          ToPort: 53
+          Description: DNS
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 8081
+          ToPort: 8082
+          Description: Comunicacion interna contenedores
+          CidrIp: "172.17.0.0/16"
+        - IpProtocol: tcp
+          FromPort: !Ref DBPortParameterName
+          ToPort: !Ref DBPortParameterName
+          Description: Database IP
+          CidrIp: !Ref SqlServerProviderIp
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: backend
+
+  # ------------------------
+  # ECR
+  # ------------------------
+  ECRRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub '${Environment}-${AppName}-respository'
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: backend
+
+  # ------------------------
+  # ECS Fargate (privado en VPC default)
+  # ------------------------
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub '${Environment}-${AppName}-cluster'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: backend
+
+  BackendLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: !Sub '/ecs/${Environment}-${AppName}-backend'
+      RetentionInDays: 7
+
+  ECSExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${Environment}-${AppName}-ecs-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: backend
+
+  ECSTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${Environment}-${AppName}-ecs-task-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: backend
+
+  ECSRoleSSMPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${Environment}-${AppName}-ecs-ssm-read'
+      Roles:
+        - !Ref ECSExecutionRole
+        - !Ref ECSTaskRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - ssm:GetParameter
+              - ssm:GetParameters
+            Resource: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${Environment}/*'
+          - Effect: Allow
+            Action:
+              - kms:Decrypt
+            Resource: !Sub 'arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:*'
+
+  # ------------------------
+  # --- Gateway Service
+  # ------------------------
+  GatewayTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${Environment}-${AppName}-gateway-task'
+      NetworkMode: bridge
+      RequiresCompatibilities: [EC2]
+      ExecutionRoleArn: !GetAtt ECSExecutionRole.Arn
+      TaskRoleArn: !GetAtt ECSTaskRole.Arn
+      ContainerDefinitions:
+        - Name: gateway
+          Image: !Sub '${ECRRepository.RepositoryUri}:gateway-latest'
+          PortMappings:
+            - ContainerPort: 80
+              HostPort: 80
+              Protocol: tcp
+          Essential: true
+          Cpu: 256
+          Memory: 512
+          MemoryReservation: 384
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref BackendLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: gateway
+          Environment:
+            - Name: ORIGINS
+              Value: !GetAtt CloudFrontDistribution.DomainName
+            - Name: ENVIRONMENT
+              Value: !Ref Environment
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - "wget -qO- http://localhost:80/api/health || exit 1"
+            Interval: 30
+            Timeout: 10
+            Retries: 3
+            StartPeriod: 120
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: backend
+
+  GatewayService:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref ECSCluster
+      ServiceName: !Sub '${Environment}-${AppName}-gateway-service'
+      TaskDefinition: !Ref GatewayTaskDefinition
+      DesiredCount: !Ref TaskNumberDesired
+      LaunchType: EC2
+      DeploymentConfiguration:
+        MaximumPercent: 100
+        MinimumHealthyPercent: 0
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+      HealthCheckGracePeriodSeconds: 60
+      EnableExecuteCommand: false
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: backend
+  
+  # ------------------------
+  # --- Auth Service
+  # ------------------------
+  AuthTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${Environment}-${AppName}-auth-task'
+      NetworkMode: bridge
+      RequiresCompatibilities: [EC2]
+      ExecutionRoleArn: !GetAtt ECSExecutionRole.Arn
+      TaskRoleArn: !GetAtt ECSTaskRole.Arn
+      ContainerDefinitions:
+        - Name: auth
+          Image: !Sub '${ECRRepository.RepositoryUri}:auth-latest'
+          PortMappings:
+            - ContainerPort: 8081
+              HostPort: 8081
+              Protocol: tcp
+          Essential: true
+          Cpu: 256
+          Memory: 512
+          MemoryReservation: 384
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref BackendLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: auth
+          Environment:
+            - Name: ENVIRONMENT
+              Value: !Ref Environment
+          Secrets:
+            - Name: JWT_SECRET
+              ValueFrom: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${JWTSecretParameterName}'
+            - Name: DB_MASTER_URL
+              ValueFrom: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${DBMasterUrlParameterName}'
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - "wget -qO- http://localhost:8081/health || exit 1"
+            Interval: 30
+            Timeout: 10
+            Retries: 3
+            StartPeriod: 120
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: backend
+
+  AuthService:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref ECSCluster
+      ServiceName: !Sub '${Environment}-${AppName}-auth-service'
+      TaskDefinition: !Ref AuthTaskDefinition
+      DesiredCount: !Ref TaskNumberDesired
+      LaunchType: EC2
+      DeploymentConfiguration:
+        MaximumPercent: 100
+        MinimumHealthyPercent: 0
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+      HealthCheckGracePeriodSeconds: 60
+      EnableExecuteCommand: false
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: backend
+  
+  # ------------------------
+  # --- Application Service
+  # ------------------------
+  ApplicationTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${Environment}-${AppName}-application-task'
+      NetworkMode: bridge
+      RequiresCompatibilities: [EC2]
+      ExecutionRoleArn: !GetAtt ECSExecutionRole.Arn
+      TaskRoleArn: !GetAtt ECSTaskRole.Arn
+      ContainerDefinitions:
+        - Name: application
+          Image: !Sub '${ECRRepository.RepositoryUri}:application-latest'
+          PortMappings:
+            - ContainerPort: 8082
+              HostPort: 8082
+              Protocol: tcp
+          Essential: true
+          Cpu: 256
+          Memory: 512
+          MemoryReservation: 384
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref BackendLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: application
+          Environment:
+            - Name: ENVIRONMENT
+              Value: !Ref Environment
+          Secrets:
+            - Name: DB_MASTER_URL
+              ValueFrom: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${DBMasterUrlParameterName}'
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - "wget -qO- http://localhost:8082/health || exit 1"
+            Interval: 30
+            Timeout: 10
+            Retries: 3
+            StartPeriod: 120
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: backend
+
+  ApplicationService:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref ECSCluster
+      ServiceName: !Sub '${Environment}-${AppName}-application-service'
+      TaskDefinition: !Ref ApplicationTaskDefinition
+      DesiredCount: !Ref TaskNumberDesired
+      LaunchType: EC2
+      DeploymentConfiguration:
+        MaximumPercent: 100
+        MinimumHealthyPercent: 0
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+      HealthCheckGracePeriodSeconds: 60
+      EnableExecuteCommand: false
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: backend
+  
+  # ------------------------
+  # --- EC2
+  # ------------------------
+  ECSInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${Environment}-${AppName}-instance-ecs-role'
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
+      Policies:
+        - PolicyName: SSMParameterStoreRead
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                  - ssm:GetParameterHistory
+                  - ssm:GetParametersByPath
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${Environment}/*'
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                Resource: !Sub 'arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:*'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: backend
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName : !Sub '${Environment}-${AppName}-instance-ecs-profile'
+      Roles:
+        - !Ref ECSInstanceRole
+
+  ECSInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref Ec2InstanceType
+      ImageId: '{{resolve:ssm:/aws/service/ecs/optimized-ami/amazon-linux-2023/arm64/recommended/image_id}}'
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      SecurityGroupIds:
+        - !Ref EcsSecurityGroup
+      SubnetId: !Ref PrivateSubnet1Id
+      KeyName: !Ref Ec2PenKeyName
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          mkdir -p /etc/ecs
+          echo ECS_CLUSTER=${Environment}-${AppName}-cluster > /etc/ecs/ecs.config
+          
+          systemctl enable docker
+          systemctl start docker
+          systemctl enable ecs
+          systemctl daemon-reload
+          systemctl start ecs
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: backend
+
+  # ------------------------
+  # Elastic IP for EC2
+  # ------------------------
+  Ec2ElasticIp:
+      Type: AWS::EC2::EIP
+      Properties:
+        Domain: vpc
+        InstanceId: !Ref ECSInstance
+        Tags:
+          - Key: Environment
+            Value: !Ref Environment
+          - Key: Service
+            Value: backend
+
+  # ------------------------
+  # AWS Budget + SNS
+  # ------------------------
+  NotificationSNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${Environment}-${AppName}-notification-alerts'
+      Subscription:
+        - Endpoint: !Ref AlertEmail
+          Protocol: email
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: transversal
+
+  NotificationSNSTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref NotificationSNSTopic
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sns:Publish
+            Resource: !Ref NotificationSNSTopic
+
+  AwsCostBudget:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: !Sub '${Environment}-${AppName}-monthly-budget'
+        BudgetLimit:
+          Amount: !Ref BudgetLimitUSD
+          Unit: USD
+        BudgetType: COST
+        TimeUnit: MONTHLY
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: SNS
+              Address: !Ref NotificationSNSTopic
+
+Outputs:
+  FrontendBucketName:
+    Value: !Ref FrontendBucket
+  CloudFrontDomain:
+    Value: !GetAtt CloudFrontDistribution.DomainName
+  ECSClusterName:
+    Value: !Ref ECSCluster
+  BudgetName:
+    Value: !Sub '${Environment}--${AppName}-monthly-budget'
