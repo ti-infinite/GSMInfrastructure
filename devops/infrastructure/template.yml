@@ -392,7 +392,7 @@ Resources:
       ExecutionRoleArn: !GetAtt ECSExecutionRole.Arn
       TaskRoleArn: !GetAtt ECSTaskRole.Arn
       ContainerDefinitions:
-        - Name: gateway
+        - Name: gsmgateway
           Image: !Sub '${ECRRepository.RepositoryUri}:gateway-latest'
           PortMappings:
             - ContainerPort: 80
@@ -407,7 +407,7 @@ Resources:
             Options:
               awslogs-group: !Ref BackendLogGroup
               awslogs-region: !Ref AWS::Region
-              awslogs-stream-prefix: gateway
+              awslogs-stream-prefix: gmsgateway
           Environment:
             - Name: ORIGINS
               Value: !GetAtt CloudFrontDistribution.DomainName
@@ -461,7 +461,7 @@ Resources:
       ExecutionRoleArn: !GetAtt ECSExecutionRole.Arn
       TaskRoleArn: !GetAtt ECSTaskRole.Arn
       ContainerDefinitions:
-        - Name: auth
+        - Name: gmsauth
           Image: !Sub '${ECRRepository.RepositoryUri}:auth-latest'
           PortMappings:
             - ContainerPort: 8081
@@ -476,7 +476,7 @@ Resources:
             Options:
               awslogs-group: !Ref BackendLogGroup
               awslogs-region: !Ref AWS::Region
-              awslogs-stream-prefix: auth
+              awslogs-stream-prefix: gmsauth
           Environment:
             - Name: ENVIRONMENT
               Value: !Ref Environment
@@ -533,7 +533,7 @@ Resources:
       ExecutionRoleArn: !GetAtt ECSExecutionRole.Arn
       TaskRoleArn: !GetAtt ECSTaskRole.Arn
       ContainerDefinitions:
-        - Name: application
+        - Name: gsmapplication
           Image: !Sub '${ECRRepository.RepositoryUri}:application-latest'
           PortMappings:
             - ContainerPort: 8082
@@ -548,7 +548,7 @@ Resources:
             Options:
               awslogs-group: !Ref BackendLogGroup
               awslogs-region: !Ref AWS::Region
-              awslogs-stream-prefix: application
+              awslogs-stream-prefix: gsmapplication
           Environment:
             - Name: ENVIRONMENT
               Value: !Ref Environment
