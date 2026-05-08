@@ -85,6 +85,7 @@ Resources:
                   - !Sub 'repo:${GitHubOrg}/${GitHubRepo}:ref:refs/heads/${GitHubBranch}'
                   - !Sub 'repo:${GitHubOrg}/${GitHubRepo}:environment:infra-*'
                   - !Sub 'repo:${GitHubOrg}/${GitHubRepo}:environment:backend-*'
+                  - !Sub 'repo:${GitHubOrg}/${GitHubRepo}:environment:frontend-*'
       Tags:
         - Key: Environment
           Value: !Ref Environment
