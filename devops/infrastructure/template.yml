@@ -553,6 +553,8 @@ Resources:
             - Name: ENVIRONMENT
               Value: !Ref Environment
           Secrets:
+            - Name: JWT_SECRET
+              ValueFrom: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${JWTSecretParameterName}'
             - Name: DB_MASTER_URL
               ValueFrom: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${DBMasterUrlParameterName}'
           HealthCheck:
