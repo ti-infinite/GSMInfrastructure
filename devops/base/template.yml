@@ -128,6 +128,14 @@ Resources:
               - !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}::parameter/aws/service/*'
           - Effect: Allow
             Action:
+              - ssm:StartSession
+              - ssm:TerminateSession
+              - ssm:ResumeSession
+              - ssm:DescribeSessions
+              - ssm:GetConnectionStatus
+            Resource: '*'
+          - Effect: Allow
+            Action:
               - kms:Encrypt
               - kms:Decrypt
             Resource: !Sub 'arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:*'
