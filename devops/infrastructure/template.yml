@@ -413,6 +413,9 @@ Resources:
               Value: !GetAtt CloudFrontDistribution.DomainName
             - Name: ENVIRONMENT
               Value: !Ref Environment
+          Secrets:
+            - Name: JWT_SECRET
+              ValueFrom: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${JWTSecretParameterName}'    
           HealthCheck:
             Command:
               - CMD-SHELL

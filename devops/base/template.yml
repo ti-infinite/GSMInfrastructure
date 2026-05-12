@@ -184,6 +184,7 @@ Resources:
               - cloudformation:RollbackStack
               - cloudformation:CreateChangeSet
               - cloudformation:DescribeChangeSet
+              - cloudformation:DeleteChangeSet
               - cloudformation:ExecuteChangeSet
               - cloudformation:DeleteStack
               - cloudformation:DescribeStackResources
