@@ -1,7 +1,7 @@
 name: Deploy Infrastructure
 on:
   push:
-    branches: ["develop"]
+    branches: ["develop", "quality", "main"]
     paths:
       - "devops/infrastructure/template.yml"
   workflow_dispatch:
