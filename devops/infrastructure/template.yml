@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: S3+CloudFront,ECS-EC2, ECR, SSM Parameter Store y AWS Budget (low-cost sobre VPC existente).
+Description: S3+CloudFront,ECS EC2, ECR, SSM Parameter Store y AWS Budget (low-cost sobre VPC existente).
 
 Parameters:
   Environment:
