@@ -665,6 +665,8 @@ Resources:
           systemctl daemon-reload
           systemctl start ecs
       Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-${AppName}-ec2-instance'
         - Key: Environment
           Value: !Ref Environment
         - Key: Service
@@ -679,6 +681,8 @@ Resources:
         Domain: vpc
         InstanceId: !Ref ECSInstance
         Tags:
+          - Key: Name
+            Value: !Sub '${Environment}-${AppName}-ec2-eip'
           - Key: Environment
             Value: !Ref Environment
           - Key: Service
