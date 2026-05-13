@@ -1,0 +1,81 @@
+name: Deploy Scheduler
+on:
+  push:
+    branches: ["develop", "quality", "main"]
+    paths:
+      - "devops/scheduler/template.yml"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment (dev/qa/prod)'
+        default: 'dev'
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  determine-env:
+    if: ${{ vars.WORKFLOW_SCHEDULER_ENABLED == 'true' }}
+    name: Determine Environment
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.set-env.outputs.environment }}
+    steps:
+      - name: Set Environment
+        id: set-env
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            ENV="${{ github.event.inputs.environment }}"
+          else
+            BRANCH="${{ github.ref_name }}"
+            if [ "$BRANCH" = "main" ]; then
+              ENV="prod"
+            elif [ "$BRANCH" = "quality" ]; then
+              ENV="qa"
+            elif [ "$BRANCH" = "develop" ]; then
+              ENV="dev"
+            else
+              ENV="dev"
+            fi
+          fi
+          echo "environment=$ENV" >> $GITHUB_OUTPUT
+          echo "Deploying $ENV-gsmapplication-scheduler-stack"
+  
+  deploy:
+    if: ${{ vars.WORKFLOW_SCHEDULER_ENABLED == 'true' }}
+    name: Deploy Scheduler
+    needs: determine-env
+    runs-on: ubuntu-latest
+    environment: infra-${{ needs.determine-env.outputs.environment }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_INFRA_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Deploy CloudFormation Stack
+        uses: aws-actions/aws-cloudformation-github-deploy@v1.2.0
+        with:
+          name: "${{ needs.determine-env.outputs.environment }}-${{ vars.APP_NAME }}-scheduler-stack"
+          template: devops/scheduler/template.yml
+          capabilities: CAPABILITY_IAM,CAPABILITY_NAMED_IAM
+          region: ${{ env.AWS_REGION }}
+          parameter-overrides: >-
+            Environment="${{ needs.determine-env.outputs.environment }}",
+            AppName="${{ vars.APP_NAME }}",
+            EC2InstanceId="${{ vars.EC2_INSTANCE_ID }}",
+            EIPAllocationId="${{ vars.EC2_ELASTIC_IP_ID }}",
+            ECSClusterName="${{ vars.ECS_CLUSTER }}",
+            GatewayServiceName="${{ vars.GATEWAY_SERVICE_NAME }}",
+            AuthServiceName="${{ vars.AUTH_SERVICE_NAME }}",
+            ApplicationServiceName="${{ vars.APPLICATION_SERVICE_NAME }}",
+            SchedulerStartExpression="${{ vars.SCHEDULER_START_EXPRESSION }}",
+            SchedulerStopExpression="${{ vars.SCHEDULER_STOP_EXPRESSION }}"
+          no-fail-on-empty-changeset: "1"
