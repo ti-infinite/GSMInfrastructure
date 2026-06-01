@@ -595,7 +595,79 @@ Resources:
           Value: !Ref Environment
         - Key: Service
           Value: backend
-  
+
+# ------------------------
+  # --- Operations Service
+  # ------------------------
+  OperationsTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${Environment}-${AppName}-operations-task'
+      NetworkMode: bridge
+      RequiresCompatibilities: [EC2]
+      ExecutionRoleArn: !GetAtt ECSExecutionRole.Arn
+      TaskRoleArn: !GetAtt ECSTaskRole.Arn
+      ContainerDefinitions:
+        - Name: gsmoperations
+          Image: !Sub '${ECRRepository.RepositoryUri}:application-latest'
+          PortMappings:
+            - ContainerPort: 8083
+              HostPort: 8083
+              Protocol: tcp
+          Essential: true
+          Cpu: 256
+          Memory: !Ref TaskMemory
+          MemoryReservation: !Ref TaskMemoryReservation
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref BackendLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: gsmoperations
+          Environment:
+            - Name: ENVIRONMENT
+              Value: !Ref Environment
+          Secrets:
+            - Name: JWT_SECRET
+              ValueFrom: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${JWTSecretParameterName}'
+            - Name: DB_MASTER_URL
+              ValueFrom: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${DBMasterUrlParameterName}'
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - "wget -qO- http://localhost:8083/health || exit 1"
+            Interval: 30
+            Timeout: 10
+            Retries: 3
+            StartPeriod: 120
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: backend
+
+  OperationsService:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref ECSCluster
+      ServiceName: !Sub '${Environment}-${AppName}-operations-service'
+      TaskDefinition: !Ref OperationsTaskDefinition
+      DesiredCount: !Ref TaskNumberDesired
+      LaunchType: EC2
+      DeploymentConfiguration:
+        MaximumPercent: 100
+        MinimumHealthyPercent: 0
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+      HealthCheckGracePeriodSeconds: 60
+      EnableExecuteCommand: false
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: backend
+
   # ------------------------
   # --- EC2
   # ------------------------
