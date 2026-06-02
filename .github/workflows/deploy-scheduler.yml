@@ -76,6 +76,7 @@ jobs:
             GatewayServiceName="${{ vars.GATEWAY_SERVICE_NAME }}",
             AuthServiceName="${{ vars.AUTH_SERVICE_NAME }}",
             ApplicationServiceName="${{ vars.APPLICATION_SERVICE_NAME }}",
+            OperationsServiceName="${{ vars.OPERATIONS_SERVICE_NAME }}",
             SchedulerStartExpression="${{ vars.SCHEDULER_START_EXPRESSION }}",
             SchedulerStopExpression="${{ vars.SCHEDULER_STOP_EXPRESSION }}"
           no-fail-on-empty-changeset: "1"

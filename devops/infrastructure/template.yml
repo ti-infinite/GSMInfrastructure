@@ -609,7 +609,7 @@ Resources:
       TaskRoleArn: !GetAtt ECSTaskRole.Arn
       ContainerDefinitions:
         - Name: gsmoperations
-          Image: !Sub '${ECRRepository.RepositoryUri}:operations-latest'
+          Image: !Sub '${ECRRepository.RepositoryUri}:gsmoperations-latest'
           PortMappings:
             - ContainerPort: 8083
               HostPort: 8083
