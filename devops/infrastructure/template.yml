@@ -257,9 +257,9 @@ Resources:
           CidrIp: !Ref VpcIdCidrBlock
         - IpProtocol: tcp
           FromPort: 8081
-          ToPort: 8082
+          ToPort: 8083
           Description: Comunicacion interna entre contenedores via docker bridge
-          CidrIp: "172.17.0.0/16"          
+          CidrIp: "172.17.0.0/16"
       SecurityGroupEgress:
         - IpProtocol: tcp
           FromPort: 443
@@ -273,7 +273,7 @@ Resources:
           CidrIp: 0.0.0.0/0
         - IpProtocol: tcp
           FromPort: 8081
-          ToPort: 8082
+          ToPort: 8083
           Description: Comunicacion interna contenedores
           CidrIp: "172.17.0.0/16"
         - IpProtocol: tcp
@@ -609,7 +609,7 @@ Resources:
       TaskRoleArn: !GetAtt ECSTaskRole.Arn
       ContainerDefinitions:
         - Name: gsmoperations
-          Image: !Sub '${ECRRepository.RepositoryUri}:application-latest'
+          Image: !Sub '${ECRRepository.RepositoryUri}:operations-latest'
           PortMappings:
             - ContainerPort: 8083
               HostPort: 8083
