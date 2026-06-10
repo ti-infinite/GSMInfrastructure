@@ -326,6 +326,15 @@ Resources:
             Resource: '*'
           - Effect: Allow
             Action:
+              - cloudfront:CreateFunction
+              - cloudfront:UpdateFunction
+              - cloudfront:DeleteFunction
+              - cloudfront:PublishFunction
+              - cloudfront:DescribeFunction
+              - cloudfront:GetFunction
+            Resource: !Sub 'arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:function/*'
+          - Effect: Allow
+            Action:
               - ec2:CreateSecurityGroup
               - ec2:DeleteSecurityGroup
               - ec2:AuthorizeSecurityGroupIngress

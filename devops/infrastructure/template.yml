@@ -162,6 +162,24 @@ Resources:
               Bool:
                 aws:SecureTransport: false
 
+  SpaRouterFunction:
+    Type: AWS::CloudFront::Function
+    Properties:
+      Name: !Sub '${Environment}-${AppName}-spa-router'
+      AutoPublish: true
+      FunctionConfig:
+        Comment: 'Reescribe rutas SPA sin extension a index.html'
+        Runtime: cloudfront-js-2.0
+      FunctionCode: |
+        function handler(event) {
+            var request = event.request;
+            var lastSegment = request.uri.split('/').pop();
+            if (!lastSegment.includes('.')) {
+                request.uri = '/index.html';
+            }
+            return request;
+        }
+
   CloudFrontDistribution:
     Type: AWS::CloudFront::Distribution
     Properties:
@@ -176,7 +194,7 @@ Resources:
             S3OriginConfig:
               OriginAccessIdentity: ""
             OriginAccessControlId: !Ref CloudFrontOAC
-          - DomainName: 
+          - DomainName:
               Fn::If:
                 - NoExistEIP
                 - !GetAtt ECSInstance.PublicDnsName
@@ -198,14 +216,10 @@ Resources:
           Compress: true
           ForwardedValues:
             QueryString: false
+          FunctionAssociations:
+            - EventType: viewer-request
+              FunctionARN: !GetAtt SpaRouterFunction.FunctionARN
         PriceClass: PriceClass_100
-        CustomErrorResponses:
-          - ErrorCode: 403
-            ResponseCode: 200
-            ResponsePagePath: /index.html
-          - ErrorCode: 404
-            ResponseCode: 200
-            ResponsePagePath: /index.html
         CacheBehaviors:
           - PathPattern: "/api/*"
             TargetOriginId: BackendEC2Origin
