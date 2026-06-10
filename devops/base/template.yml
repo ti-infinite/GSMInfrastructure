@@ -9,7 +9,8 @@ Parameters:
 
   AppName:
     Type: String
-    Default: infiniteherbs
+    Default: GSMApplication
+    Description: 'Nombre de la aplicación (ej. gsmapp)'
 
   GitHubOrg:
     Type: String
@@ -323,6 +324,16 @@ Resources:
               - cloudfront:DeleteOriginAccessControl
               - cloudfront:GetOriginAccessControl
             Resource: '*'
+          - Effect: Allow
+            Action:
+              - cloudfront:CreateFunction
+              - cloudfront:UpdateFunction
+              - cloudfront:DeleteFunction
+              - cloudfront:PublishFunction
+              - cloudfront:DescribeFunction
+              - cloudfront:GetFunction
+              - cloudfront:ListTagsForResource
+            Resource: !Sub 'arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:function/*'
           - Effect: Allow
             Action:
               - ec2:CreateSecurityGroup

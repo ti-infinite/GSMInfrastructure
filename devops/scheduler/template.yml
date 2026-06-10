@@ -13,7 +13,8 @@ Parameters:
 
   AppName:
     Type: String
-    Default: infiniteherbs
+    Default: GSMApplication
+    Description: Nombre de la aplicación (ej. gsmapp)
 
   EC2InstanceId:
     Type: AWS::EC2::Instance::Id
@@ -42,7 +43,11 @@ Parameters:
   ApplicationServiceName:
     Type: String
     Default: dev-application-service
-    
+
+  OperationsServiceName:
+    Type: String
+    Default: dev-operations-service
+
   SchedulerStartExpression:
     Type: String
     Default: cron(0 9 ? * MON-SAT *)
@@ -119,6 +124,7 @@ Resources:
           GATEWAY_SERVICE: !Ref GatewayServiceName
           AUTH_SERVICE: !Ref AuthServiceName
           APPLICATION_SERVICE: !Ref ApplicationServiceName
+          OPERATIONS_SERVICE: !Ref OperationsServiceName
       Code:
         ZipFile: |
           import boto3
@@ -139,6 +145,7 @@ Resources:
               os.environ['GATEWAY_SERVICE'],
               os.environ['AUTH_SERVICE'],
               os.environ['APPLICATION_SERVICE'],
+              os.environ['OPERATIONS_SERVICE'],
           ]
 
           def scale_ecs(desired):
@@ -223,6 +230,7 @@ Resources:
           GATEWAY_SERVICE: !Ref GatewayServiceName
           AUTH_SERVICE: !Ref AuthServiceName
           APPLICATION_SERVICE: !Ref ApplicationServiceName
+          OPERATIONS_SERVICE: !Ref OperationsServiceName
       Code:
         ZipFile: |
           import boto3
@@ -231,7 +239,7 @@ Resources:
           import logging
 
           logger = logging.getLogger()
-          logger.setLevel(logging.INFO)
+          logger.setLevel(logging.INFO) 
 
           ec2 = boto3.client('ec2')
           ecs = boto3.client('ecs')
@@ -243,6 +251,7 @@ Resources:
               os.environ['GATEWAY_SERVICE'],
               os.environ['AUTH_SERVICE'],
               os.environ['APPLICATION_SERVICE'],
+              os.environ['OPERATIONS_SERVICE'],
           ]
 
           def start_instance():
