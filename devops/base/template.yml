@@ -332,6 +332,7 @@ Resources:
               - cloudfront:PublishFunction
               - cloudfront:DescribeFunction
               - cloudfront:GetFunction
+              - cloudfront:ListTagsForResource
             Resource: !Sub 'arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:function/*'
           - Effect: Allow
             Action:
