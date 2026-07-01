@@ -85,5 +85,6 @@ jobs:
             PrivateSubnet1Id="${{ vars.PRIVATE_SUBNET_ID_1 }}",
             Ec2PenKeyName="${{ vars.KEYPEM_EC2_NAME }}",
             Ec2InstanceType="${{ vars.EC2_INSTANCE_TYPE }}",
-            ExistingEIPPublicIp="${{ vars.DNS_EC2_ELASTIC_IP}}"
+            ExistingEIPPublicIp="${{ vars.DNS_EC2_ELASTIC_IP}}",
+            IhApiOriginDomain="${{ vars.IH_API_ORIGIN_DOMAIN }}"
           no-fail-on-empty-changeset: "1"

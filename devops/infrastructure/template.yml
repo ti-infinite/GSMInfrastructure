@@ -88,6 +88,10 @@ Parameters:
     Default: ""
     Description: "DNS de la IP del EIP existente"
 
+  IhApiOriginDomain:
+    Type: String
+    Description: "Dominio del custom origin de IH API por ambiente (ej: 3.232.144.97.sslip.io)"
+
 Conditions:
   NoExistEIP: !Equals [!Ref ExistingEIPPublicIp, ""]
 
@@ -208,6 +212,13 @@ Resources:
             OriginCustomHeaders:
               - HeaderName: "X-CloudFront-Origin"
                 HeaderValue: !Ref CloudFrontHeader
+          - DomainName: !Ref IhApiOriginDomain
+            Id: IhApiOrigin
+            CustomOriginConfig:
+              HTTPPort: 80
+              HTTPSPort: 443
+              OriginProtocolPolicy: https-only
+              OriginSSLProtocols: [TLSv1.2]
         DefaultCacheBehavior:
           TargetOriginId: s3-origin
           ViewerProtocolPolicy: redirect-to-https
@@ -240,6 +251,14 @@ Resources:
             DefaultTTL: 0
             MaxTTL: 0
             Compress: false
+          - PathPattern: "/ih-api/*"
+            TargetOriginId: IhApiOrigin
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT]
+            CachedMethods: [GET, HEAD]
+            Compress: true
+            # Managed-CachingOptimized
+            CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
         ViewerCertificate:
           CloudFrontDefaultCertificate: true
       Tags:
