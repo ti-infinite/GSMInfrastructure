@@ -184,6 +184,24 @@ Resources:
             return request;
         }
 
+  IhApiStripPrefixFunction:
+    Type: AWS::CloudFront::Function
+    Properties:
+      Name: !Sub '${Environment}-${AppName}-ih-api-strip-prefix'
+      AutoPublish: true
+      FunctionConfig:
+        Comment: 'Elimina el prefijo /ih-api antes de reenviar al origin'
+        Runtime: cloudfront-js-2.0
+      FunctionCode: |
+        function handler(event) {
+          var request = event.request;
+          request.uri = request.uri.replace(/^\/ih-api/, '');
+          if (request.uri === '' || request.uri === '/') {
+            request.uri = '/';
+          }
+          return request;
+        }
+
   CloudFrontDistribution:
     Type: AWS::CloudFront::Distribution
     Properties:
@@ -253,12 +271,15 @@ Resources:
             Compress: false
           - PathPattern: "/ih-api/*"
             TargetOriginId: IhApiOrigin
-            ViewerProtocolPolicy: redirect-to-https
+            ViewerProtocolPolicy: https-only
             AllowedMethods: [DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT]
             CachedMethods: [GET, HEAD]
             Compress: true
-            # Managed-CachingOptimized
-            CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
+            FunctionAssociations:
+              - EventType: viewer-request
+                FunctionARN: !GetAtt IhApiStripPrefixFunction.FunctionARN
         ViewerCertificate:
           CloudFrontDefaultCertificate: true
       Tags:
